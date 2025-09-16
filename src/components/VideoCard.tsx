@@ -50,6 +50,7 @@ export interface VideoCardProps {
   // 短剧相关字段
   vod_class?: string;
   vod_tag?: string;
+  book_id?: string; // 添加 book_id 属性
 }
 
 export type VideoCardHandle = {
@@ -81,6 +82,7 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
     origin = 'vod',
     vod_class,
     vod_tag,
+    book_id, // 添加 book_id 参数
   }: VideoCardProps,
   ref
 ) {
@@ -232,10 +234,10 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
       // 直播内容跳转到直播页面
       const url = `/live?source=${actualSource.replace('live_', '')}&id=${actualId.replace('live_', '')}`;
       router.push(url);
-    } else if (from === 'shortdrama' && actualId) {
-      // 短剧内容跳转到播放页面，传递剧集ID用于调用获取全集地址的接口
+    } else if (from === 'shortdrama' && book_id) {
+      // 短剧内容跳转到播放页面，使用 book_id 获取剧集列表
       const urlParams = new URLSearchParams();
-      urlParams.set('shortdrama_id', actualId);
+      urlParams.set('book_id', book_id);
       urlParams.set('title', actualTitle.trim());
       if (actualYear) urlParams.set('year', actualYear);
       if (vod_class) urlParams.set('vod_class', vod_class);
@@ -266,6 +268,9 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
     isAggregate,
     actualQuery,
     actualSearchType,
+    book_id, // 添加 book_id 依赖
+    vod_class,
+    vod_tag,
   ]);
 
   // 新标签页播放处理函数
@@ -273,6 +278,17 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
     if (origin === 'live' && actualSource && actualId) {
       // 直播内容跳转到直播页面
       const url = `/live?source=${actualSource.replace('live_', '')}&id=${actualId.replace('live_', '')}`;
+      window.open(url, '_blank');
+    } else if (from === 'shortdrama' && book_id) {
+      // 短剧内容跳转到播放页面，使用 book_id 获取剧集列表
+      const urlParams = new URLSearchParams();
+      urlParams.set('book_id', book_id);
+      urlParams.set('title', actualTitle.trim());
+      if (actualYear) urlParams.set('year', actualYear);
+      if (vod_class) urlParams.set('vod_class', vod_class);
+      if (vod_tag) urlParams.set('vod_tag', vod_tag);
+
+      const url = `/play?${urlParams.toString()}`;
       window.open(url, '_blank');
     } else if (from === 'douban' || (isAggregate && !actualSource && !actualId)) {
       const url = `/play?title=${encodeURIComponent(actualTitle.trim())}${actualYear ? `&year=${actualYear}` : ''}${actualSearchType ? `&stype=${actualSearchType}` : ''}${isAggregate ? '&prefer=true' : ''}${actualQuery ? `&stitle=${encodeURIComponent(actualQuery.trim())}` : ''}`;
@@ -295,6 +311,9 @@ const VideoCard = forwardRef<VideoCardHandle, VideoCardProps>(function VideoCard
     isAggregate,
     actualQuery,
     actualSearchType,
+    book_id, // 添加 book_id 依赖
+    vod_class,
+    vod_tag,
   ]);
 
   // 检查搜索结果的收藏状态
