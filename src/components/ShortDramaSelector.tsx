@@ -1,11 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { useEffect, useRef, useState } from 'react';
-
-interface ShortDramaCategory {
-  type_id: number;
-  type_name: string;
-}
+import { getShortDramaCategories, ShortDramaCategory } from '@/lib/shortdrama.client';
 
 interface ShortDramaSelectorProps {
   selectedCategory: string;
@@ -29,20 +25,33 @@ const ShortDramaSelector = ({
 
   // 获取分类数据
   useEffect(() => {
-    // 设置固定的分类
-    const fixedCategories = [
-      { type_id: 1, type_name: '穿越' },
-      { type_id: 2, type_name: '古装' },
-      { type_id: 3, type_name: '现代' },
-      { type_id: 4, type_name: '都市' },
-      { type_id: 5, type_name: '言情' },
-      { type_id: 6, type_name: '悬疑' },
-      { type_id: 7, type_name: '喜剧' },
-      { type_id: 8, type_name: '重生' },
-    ];
-    
-    setCategories(fixedCategories);
-    setLoading(false);
+    const fetchCategories = async () => {
+      try {
+        setLoading(true);
+        const response = await getShortDramaCategories();
+        setCategories([
+          { type_id: 0, type_name: '全部' },
+          ...response.categories
+        ]);
+      } catch (error) {
+        console.error('获取短剧分类失败:', error);
+        // 设置默认分类
+        setCategories([
+          { type_id: 0, type_name: '全部' },
+          { type_id: 1, type_name: '古装' },
+          { type_id: 2, type_name: '现代' },
+          { type_id: 3, type_name: '都市' },
+          { type_id: 4, type_name: '言情' },
+          { type_id: 5, type_name: '悬疑' },
+          { type_id: 6, type_name: '喜剧' },
+          { type_id: 7, type_name: '其他' },
+        ]);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchCategories();
   }, []);
 
   // 更新指示器位置
