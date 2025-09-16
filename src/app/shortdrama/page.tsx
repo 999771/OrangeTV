@@ -388,6 +388,8 @@ function ShortDramaPageClient() {
                         episodes={item.total_episodes ? parseInt(item.total_episodes) || 1 : 1}
                         vod_class={item.vod_class}
                         vod_tag={item.vod_tag}
+                        // 添加额外的属性，确保VideoCard组件能正确获取剧集信息
+                        book_id={item.book_id}
                       />
                     </div>
                   );
