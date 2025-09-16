@@ -3,31 +3,17 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
+
+import {
+  getShortDramaList,
+  getShortDramaLatest,
+  ShortDramaItem,
+} from '@/lib/shortdrama.client';
+
 import DoubanCardSkeleton from '@/components/DoubanCardSkeleton';
 import PageLayout from '@/components/PageLayout';
 import ShortDramaSelector from '@/components/ShortDramaSelector';
 import VideoCard from '@/components/VideoCard';
-
-interface ShortDramaItem {
-  id: number;
-  vod_id?: number;
-  name: string;
-  cover: string;
-  score?: string;
-  update_time?: string;
-  total_episodes?: string;
-  vod_class?: string;
-  vod_tag?: string;
-  book_id?: string;
-}
-
-// 缓存接口
-interface CategoryCache {
-  data: ShortDramaItem[];
-  currentPage: number;
-  totalPages: number;
-  hasMore: boolean;
-}
 
 function ShortDramaPageClient() {
   const [shortDramaData, setShortDramaData] = useState<ShortDramaItem[]>([]);
@@ -40,17 +26,14 @@ function ShortDramaPageClient() {
   const loadingRef = useRef<HTMLDivElement>(null);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 选择器状态 - 默认选择穿越分类 (type_id: 1)
-  const [selectedCategory, setSelectedCategory] = useState<string>('1');
+  // 选择器状态
+  const [selectedCategory, setSelectedCategory] = useState<string>('0'); // '0' 表示全部
 
   // 用于存储最新参数值的 refs
   const currentParamsRef = useRef({
-    selectedCategory: '1',
+    selectedCategory: '0',
     currentPage: 1,
   });
-
-  // 分类数据缓存
-  const categoryCacheRef = useRef<Record<string, CategoryCache>>({});
 
   // 生成骨架屏数据
   const skeletonData = Array.from({ length: 25 }, (_, index) => index);
@@ -83,38 +66,6 @@ function ShortDramaPageClient() {
     []
   );
 
-  // 获取分类名称
-  const getCategoryName = (categoryId: string) => {
-    const categories = {
-      '1': '穿越',
-      '2': '古装',
-      '3': '现代',
-      '4': '都市',
-      '5': '言情',
-      '6': '悬疑',
-      '7': '喜剧',
-      '8': '重生'
-    };
-    return categories[categoryId as keyof typeof categories] || '穿越';
-  };
-
-  // 检查缓存中是否有数据
-  const checkCache = useCallback((category: string, page: number) => {
-    const cacheKey = `${category}-${page}`;
-    return categoryCacheRef.current[cacheKey];
-  }, []);
-
-  // 保存数据到缓存
-  const saveToCache = useCallback((category: string, page: number, data: ShortDramaItem[], totalPages: number, hasMore: boolean) => {
-    const cacheKey = `${category}-${page}`;
-    categoryCacheRef.current[cacheKey] = {
-      data,
-      currentPage: page,
-      totalPages,
-      hasMore
-    };
-  }, []);
-
   // 防抖的数据加载函数
   const loadInitialData = useCallback(async () => {
     // 创建当前参数的快照
@@ -125,70 +76,47 @@ function ShortDramaPageClient() {
 
     try {
       setLoading(true);
-      
-      // 检查缓存中是否有数据
-      const cachedData = checkCache(selectedCategory, 1);
-      if (cachedData) {
-        // 使用缓存数据
-        setShortDramaData(cachedData.data);
-        setTotalPages(cachedData.totalPages);
-        setHasMore(cachedData.hasMore);
-        setLoading(false);
-        return;
-      }
-
       // 确保在加载初始数据时重置页面状态
       setShortDramaData([]);
       setCurrentPage(1);
       setHasMore(true);
       setIsLoadingMore(false);
 
-      const categoryName = getCategoryName(selectedCategory);
-      
-      const url = `https://api.xingzhige.com/API/playlet/?keyword=${encodeURIComponent(categoryName)}&page=1`;
-      const response = await fetch(url);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP错误! 状态: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      
-      if (data.code === 0 && data.data) {
-        // 检查参数是否仍然一致，如果一致才设置数据
-        const currentSnapshot = { ...currentParamsRef.current };
+      let data: ShortDramaItem[] = [];
+      let totalPages = 1;
 
-        if (isSnapshotEqual(requestSnapshot, currentSnapshot)) {
-          // 转换API返回的数据格式
-          const formattedData: ShortDramaItem[] = data.data.map((item: any) => ({
-            id: parseInt(item.book_id) || 0,
-            vod_id: parseInt(item.book_id) || 0,
-            book_id: item.book_id,
-            name: item.title,
-            cover: item.cover,
-            score: item.score || '0',
-            update_time: item.update_time || '',
-            total_episodes: item.total_episodes || '0',
-            vod_class: item.category_schema || '',
-            vod_tag: item.category_schema || ''
-          }));
-          
-          // 保存到缓存
-          saveToCache(selectedCategory, 1, formattedData, 10, formattedData.length !== 0 && 1 < 10);
-          
-          setShortDramaData(formattedData);
-          setTotalPages(10); // 假设有10页数据
-          setHasMore(formattedData.length !== 0 && 1 < 10);
-          setLoading(false);
-        }
+      if (selectedCategory === '0') {
+        // 全部分类 - 调用获取最新剧集的接口
+        const latestData = await getShortDramaLatest({ page: '1' });
+        data = Array.isArray(latestData) ? latestData : [];
+        totalPages = 10; // 假设最新剧集有多页
       } else {
-        throw new Error(data.msg || '获取数据失败');
+        // 其他分类 - 调用获取分类热搜的接口
+        const response = await getShortDramaList({
+          categoryId: selectedCategory,
+          page: '1',
+        });
+        data = Array.isArray(response?.list) ? response.list : [];
+        totalPages = response?.totalPages || 1;
+      }
+
+      // 检查参数是否仍然一致，如果一致才设置数据
+      const currentSnapshot = { ...currentParamsRef.current };
+
+      if (isSnapshotEqual(requestSnapshot, currentSnapshot)) {
+        setShortDramaData(data);
+        setTotalPages(totalPages);
+        setHasMore(data.length !== 0 && currentPage < totalPages);
+        setLoading(false);
+      } else {
+        // 没有更多数据时设置hasMore为false
+        setHasMore(false);
       }
     } catch (err) {
       console.error('加载短剧数据失败:', err);
-      setLoading(false);
+      setLoading(false); // 发生错误时总是停止loading状态
     }
-  }, [selectedCategory, isSnapshotEqual, checkCache, saveToCache]);
+  }, [selectedCategory, isSnapshotEqual]);
 
   // 加载数据
   useEffect(() => {
@@ -223,65 +151,33 @@ function ShortDramaPageClient() {
         try {
           setIsLoadingMore(true);
 
-          // 检查缓存中是否有数据
-          const cachedData = checkCache(selectedCategory, currentPage);
-          if (cachedData) {
-            // 使用缓存数据
-            setShortDramaData(prev => [...prev, ...cachedData.data]);
-            setHasMore(cachedData.hasMore);
-            setIsLoadingMore(false);
-            return;
-          }
+          let data: ShortDramaItem[] = [];
 
-          const categoryName = getCategoryName(selectedCategory);
-          
-          const url = `https://api.xingzhige.com/API/playlet/?keyword=${encodeURIComponent(categoryName)}&page=${currentPage}`;
-          const response = await fetch(url);
-          
-          if (!response.ok) {
-            throw new Error(`HTTP错误! 状态: ${response.status}`);
-          }
-          
-          const data = await response.json();
-          
-          if (data.code === 0 && data.data) {
-            // 转换API返回的数据格式
-            const formattedData: ShortDramaItem[] = data.data.map((item: any) => ({
-              id: parseInt(item.book_id) || 0,
-              vod_id: parseInt(item.book_id) || 0,
-              book_id: item.book_id,
-              name: item.title,
-              cover: item.cover,
-              score: item.score || '0',
-              update_time: item.update_time || '',
-              total_episodes: item.total_episodes || '0',
-              vod_class: item.category_schema || '',
-              vod_tag: item.category_schema || ''
-            }));
-
-            // 检查参数是否仍然一致，如果一致才设置数据
-            const currentSnapshot = { ...currentParamsRef.current };
-
-            if (isSnapshotEqual(requestSnapshot, currentSnapshot)) {
-              // 保存到缓存
-              saveToCache(selectedCategory, currentPage, formattedData, totalPages, formattedData.length !== 0 && currentPage < totalPages);
-              
-              setShortDramaData((prev) => [...prev, ...formattedData]);
-              setHasMore(formattedData.length !== 0 && currentPage < totalPages);
-            } else {
-              // 参数不一致，忽略此次响应
-              console.log('参数已变更，忽略过期的数据响应');
-            }
+          if (selectedCategory === '0') {
+            // 全部分类 - 调用获取最新剧集的接口
+            const latestData = await getShortDramaLatest({ page: currentPage.toString() });
+            data = Array.isArray(latestData) ? latestData : [];
           } else {
-            throw new Error(data.msg || '获取更多数据失败');
+            // 其他分类 - 调用获取分类热搜的接口
+            const response = await getShortDramaList({
+              categoryId: selectedCategory,
+              page: currentPage.toString(),
+            });
+            data = Array.isArray(response?.list) ? response.list : [];
+          }
+
+          // 检查参数是否仍然一致，如果一致才设置数据
+          const currentSnapshot = { ...currentParamsRef.current };
+
+          if (isSnapshotEqual(requestSnapshot, currentSnapshot)) {
+            setShortDramaData((prev) => [...prev, ...data]);
+            setHasMore(data.length !== 0 && currentPage < totalPages);
+          } else {
+            // 参数不一致，忽略此次响应
+            console.log('参数已变更，忽略过期的数据响应');
           }
         } catch (err) {
           console.error('加载更多短剧数据失败:', err);
-          
-          // 即使出错也继续尝试下一页
-          if (currentPage < totalPages) {
-            setHasMore(true);
-          }
         } finally {
           setIsLoadingMore(false);
         }
@@ -289,7 +185,7 @@ function ShortDramaPageClient() {
 
       fetchMoreData();
     }
-  }, [currentPage, selectedCategory, totalPages, isSnapshotEqual, checkCache, saveToCache]);
+  }, [currentPage, selectedCategory, totalPages, isSnapshotEqual]);
 
   // 设置滚动监听
   useEffect(() => {
@@ -306,7 +202,6 @@ function ShortDramaPageClient() {
     const observer = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && hasMore && !isLoadingMore) {
-          // 自动加载下一页
           setCurrentPage((prev) => prev + 1);
         }
       },
@@ -337,6 +232,7 @@ function ShortDramaPageClient() {
     },
     [selectedCategory]
   );
+
 
   return (
     <PageLayout activePath='/shortdrama'>
@@ -372,7 +268,7 @@ function ShortDramaPageClient() {
               : // 显示实际数据
               Array.isArray(shortDramaData) && shortDramaData.length > 0
                 ? shortDramaData.map((item, index) => {
-                  const videoId = item.book_id || item.vod_id?.toString() || item.id.toString();
+                  const videoId = item.vod_id ? item.vod_id.toString() : item.id.toString();
                   return (
                     <div key={`${item.name}-${item.id}-${index}`} className='w-full'>
                       <VideoCard
@@ -388,8 +284,6 @@ function ShortDramaPageClient() {
                         episodes={item.total_episodes ? parseInt(item.total_episodes) || 1 : 1}
                         vod_class={item.vod_class}
                         vod_tag={item.vod_tag}
-                        // 添加额外的属性，确保VideoCard组件能正确获取剧集信息
-                        book_id={item.book_id}
                       />
                     </div>
                   );
