@@ -2,71 +2,44 @@
 
 import { useEffect } from 'react';
 
-// 全局主题加载器组件
+// 全局主题加载器组件 - 作为服务端主题配置的同步和备份机制
 const GlobalThemeLoader = () => {
   useEffect(() => {
-    const loadGlobalTheme = async () => {
+    const syncGlobalTheme = async () => {
       try {
-        // 获取全局主题配置
+        // 检查是否已有服务端预设的主题配置
+        const runtimeConfig = (window as any).RUNTIME_CONFIG;
+        const serverThemeConfig = runtimeConfig?.THEME_CONFIG;
+
+        console.log('检查服务端主题配置:', serverThemeConfig);
+
+        if (serverThemeConfig) {
+          // 服务端已经应用了主题配置，检查是否需要同步更新
+          console.log('服务端主题配置已存在，无需重新加载');
+          return;
+        }
+
+        // 如果没有服务端配置，则从API获取（备用方案）
+        console.log('未检测到服务端主题配置，尝试从API加载...');
         const response = await fetch('/api/theme');
         const result = await response.json();
 
-        console.log('获取到全站主题配置:', result);
-
         if (result.success && result.data) {
-          const { defaultTheme, customCSS, allowUserCustomization } = result.data;
+          const { defaultTheme, customCSS } = result.data;
+          console.log('从API获取到主题配置:', { defaultTheme, customCSS });
 
-          // 检查用户是否有自定义设置
-          const userTheme = localStorage.getItem('app-theme');
-          const userCustomCSS = localStorage.getItem('app-custom-css') || '';
-
-          console.log('当前用户设置:', { userTheme, userCustomCSS });
-          console.log('全站配置:', { defaultTheme, customCSS, allowUserCustomization });
-
-          // 如果不允许用户自定义，强制应用全局配置
-          if (!allowUserCustomization) {
-            localStorage.setItem('app-theme', defaultTheme);
-            localStorage.setItem('app-custom-css', customCSS);
-            applyTheme(defaultTheme, customCSS);
-            console.log('强制应用全站配置:', defaultTheme);
-            return;
-          }
-
-          // 智能决定使用哪个主题
-          let finalTheme = defaultTheme;
-          let finalCSS = customCSS;
-
-          // 检查是否需要强制应用全站主题
-          // 如果localStorage中存储的主题与全站默认不同，说明可能是过期的设置，需要更新
-          const shouldForceGlobalTheme = !userTheme || userTheme !== defaultTheme;
-
-          if (shouldForceGlobalTheme) {
-            // 强制应用全站默认配置
-            finalTheme = defaultTheme;
-            finalCSS = customCSS;
-            localStorage.setItem('app-theme', defaultTheme);
-            if (customCSS) {
-              localStorage.setItem('app-custom-css', customCSS);
-            } else {
-              localStorage.removeItem('app-custom-css');
-            }
-            console.log('强制应用全站默认主题:', defaultTheme, '(替换过期设置:', userTheme, ')');
-          } else {
-            // 用户设置与全站默认一致，使用现有设置
-            finalTheme = userTheme;
-            finalCSS = userCustomCSS || customCSS;
-            console.log('保持一致的主题设置:', userTheme);
-          }
-
-          // 应用最终主题
-          applyTheme(finalTheme, finalCSS);
+          // 应用从API获取的配置
+          applyTheme(defaultTheme, customCSS);
+          console.log('已应用API主题配置:', defaultTheme);
         }
       } catch (error) {
-        console.error('加载全局主题配置失败:', error);
-        // 失败时使用本地设置或默认设置
-        const savedTheme = localStorage.getItem('app-theme') || 'default';
-        const savedCustomCSS = localStorage.getItem('app-custom-css') || '';
-        applyTheme(savedTheme, savedCustomCSS);
+        console.error('同步全站主题配置失败:', error);
+        // 失败时检查当前HTML状态，如果没有主题则应用默认
+        const html = document.documentElement;
+        if (!html.hasAttribute('data-theme')) {
+          applyTheme('default', '');
+          console.log('应用默认主题作为备用');
+        }
       }
     };
 
@@ -83,17 +56,21 @@ const GlobalThemeLoader = () => {
       }
 
       // 应用自定义CSS
-      let customStyleEl = document.getElementById('global-theme-css');
+      let customStyleEl = document.getElementById('custom-theme-css');
       if (!customStyleEl) {
         customStyleEl = document.createElement('style');
-        customStyleEl.id = 'global-theme-css';
+        customStyleEl.id = 'custom-theme-css';
         document.head.appendChild(customStyleEl);
       }
       customStyleEl.textContent = css;
     };
 
-    // 立即加载，不延迟
-    loadGlobalTheme();
+    // 稍作延迟，确保DOM完全加载后再同步
+    const timer = setTimeout(() => {
+      syncGlobalTheme();
+    }, 100);
+
+    return () => clearTimeout(timer);
   }, []);
 
   return null; // 这是一个逻辑组件，不渲染任何内容
